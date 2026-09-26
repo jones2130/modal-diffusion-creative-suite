@@ -1,0 +1,1582 @@
+---
+// frontend/src/pages/index.astro
+import { CONTROLNET_REGISTRY } from '../lib/controlnets';
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" href="/favicon.ico" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Diffusers Studio — Modal Text-to-Image</title>
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+			rel="stylesheet"
+		/>
+	</head>
+	<body>
+		<div class="app-layout">
+			<!-- Header -->
+			<header class="app-header">
+				<div class="brand">
+					<div class="brand-logo">
+						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<polygon points="12 2 2 7 12 12 22 7 12 2" />
+							<polyline points="2 17 12 22 22 17" />
+							<polyline points="2 12 12 17 22 12" />
+						</svg>
+					</div>
+					<div>
+						<h1>Diffusers Studio</h1>
+						<p class="subtitle">Modal Inference Client (SDXL &amp; FLUX)</p>
+					</div>
+				</div>
+				<div class="endpoint-status-bar">
+					<label for="endpoint-url" class="endpoint-label">Modal Endpoint:</label>
+					<div class="endpoint-input-wrap">
+						<input
+							type="url"
+							id="endpoint-url"
+							placeholder="https://<username>--diffusion-create-suite-generate.modal.run"
+							spellcheck="false"
+						/>
+						<span id="endpoint-ping" class="status-indicator" title="Endpoint configured"></span>
+					</div>
+				</div>
+			</header>
+
+			<!-- Main Grid -->
+			<main class="main-content">
+				<!-- Left Column: Controls -->
+				<section class="panel controls-panel">
+					<form id="generate-form" onsubmit="return false;">
+						<!-- Model Selector -->
+						<div class="form-group">
+							<label class="section-label">Model Engine</label>
+							<div class="model-toggle" role="radiogroup">
+								<label class="model-option active">
+									<input type="radio" name="model_type" value="sdxl" checked />
+									<div class="option-card">
+										<span class="model-name">SDXL 1.0</span>
+										<span class="model-badge">A10G GPU</span>
+										<span class="model-desc">Fast, versatile generation</span>
+									</div>
+								</label>
+								<label class="model-option">
+									<input type="radio" name="model_type" value="flux" />
+									<div class="option-card">
+										<span class="model-name">FLUX.1-dev</span>
+										<span class="model-badge badge-accent">A100 GPU</span>
+										<span class="model-desc">Photorealistic detail &amp; text</span>
+									</div>
+								</label>
+							</div>
+						</div>
+
+						<!-- Prompt -->
+						<div class="form-group">
+							<div class="label-row">
+								<label for="prompt-input" class="section-label">Prompt <span class="required">*</span></label>
+								<button type="button" id="btn-sample-prompt" class="btn-text">🎲 Surprise Prompt</button>
+							</div>
+							<textarea
+								id="prompt-input"
+								name="prompt"
+								rows="3"
+								placeholder="A cinematic 35mm photo of a retro astronaut walking through a neon rainforest, volumetric lighting, 8k..."
+								required
+							></textarea>
+						</div>
+
+						<!-- Negative Prompt -->
+						<div class="form-group">
+							<label for="negative-prompt-input" class="section-label">Negative Prompt</label>
+							<textarea
+								id="negative-prompt-input"
+								name="negative_prompt"
+								rows="2"
+								placeholder="blurry, distorted, low quality, oversaturated, deformed hands..."
+							></textarea>
+						</div>
+
+						<!-- Generation Settings -->
+						<div class="settings-grid">
+							<div class="form-group">
+								<div class="label-row">
+									<label for="steps-input">Steps</label>
+									<span id="steps-val" class="param-val">25</span>
+								</div>
+								<input type="range" id="steps-input" name="steps" min="10" max="50" value="25" />
+							</div>
+
+							<div class="form-group">
+								<div class="label-row">
+									<label for="guidance-input">Guidance Scale</label>
+									<span id="guidance-val" class="param-val">7.5</span>
+								</div>
+								<input
+									type="range"
+									id="guidance-input"
+									name="guidance_scale"
+									min="1.0"
+									max="15.0"
+									step="0.5"
+									value="7.5"
+								/>
+							</div>
+
+							<div class="form-group">
+								<div class="label-row">
+									<label for="num-images-select">Number of Images</label>
+								</div>
+								<select id="num-images-select" name="num_images">
+									<option value="1" selected>1 Image</option>
+									<option value="2">2 Images</option>
+									<option value="4">4 Images</option>
+								</select>
+							</div>
+
+							<div class="form-group">
+								<div class="label-row">
+									<label for="seed-input">Seed</label>
+									<button type="button" id="btn-random-seed" class="btn-text">Randomize</button>
+								</div>
+								<input type="number" id="seed-input" name="seed" placeholder="Random (blank)" />
+							</div>
+						</div>
+
+						<!-- Collapsible ControlNet Section -->
+						<details class="controlnet-accordion" id="controlnet-accordion">
+							<summary>
+								<span>ControlNet (Optional)</span>
+								<span class="summary-hint" id="cnet-summary-status">Disabled (None)</span>
+							</summary>
+							<div class="controlnet-content">
+								<!-- Quick Presets -->
+								<div class="form-group">
+									<div class="label-row">
+										<label class="section-label">Quick Presets</label>
+										<span class="param-hint">Auto-maps to SDXL or FLUX</span>
+									</div>
+									<div class="preset-pill-group" role="group" aria-label="ControlNet Presets">
+										{Object.entries(CONTROLNET_REGISTRY || {}).map(([key, config]) => (
+											<button
+												type="button"
+												class={`preset-pill ${key === 'none' ? 'active' : ''}`}
+												data-preset-key={key}
+											>
+												{config.label}
+											</button>
+										))}
+										<button
+											type="button"
+											class="preset-pill preset-pill-custom"
+											data-preset-key="custom"
+											id="pill-custom"
+											style="display: none;"
+										>
+											Custom Manual
+										</button>
+									</div>
+								</div>
+
+								<!-- ControlNet Model Repo Input -->
+								<div class="form-group">
+									<div class="label-row">
+										<label for="controlnet-id">ControlNet Model Repo</label>
+										<span id="cnet-mapping-badge" class="mapping-badge badge-none">None</span>
+									</div>
+									<input
+										type="text"
+										id="controlnet-id"
+										name="controlnet_id"
+										placeholder="Select a preset above or type any HuggingFace repo ID"
+										spellcheck="false"
+									/>
+									<span class="subtext-note" id="cnet-repo-note">
+										Selecting a preset auto-populates the model ID and optimal scale. You can also override it manually.
+									</span>
+								</div>
+
+								<!-- Conditioning Scale -->
+								<div class="form-group">
+									<div class="label-row">
+										<label for="controlnet-scale">Conditioning Scale</label>
+										<span id="controlnet-scale-val" class="param-val">0.60</span>
+									</div>
+									<input
+										type="range"
+										id="controlnet-scale"
+										name="controlnet_scale"
+										min="0.1"
+										max="1.0"
+										step="0.05"
+										value="0.6"
+									/>
+								</div>
+
+								<!-- Control Image Upload -->
+								<div class="form-group">
+									<label>Control Image</label>
+									<div class="file-dropzone" id="dropzone">
+										<input type="file" id="control-image-file" accept="image/*" class="file-input" />
+										<div class="dropzone-label" id="dropzone-text">
+											<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+												<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+												<polyline points="17 8 12 3 7 8" />
+												<line x1="12" y1="3" x2="12" y2="15" />
+											</svg>
+											<span>Click or drag reference image here</span>
+										</div>
+										<div class="preview-wrap hidden" id="preview-wrap">
+											<img id="control-image-preview" src="" alt="Control Preview" />
+											<button type="button" id="btn-remove-control-img" class="btn-clear" title="Remove image">&times;</button>
+										</div>
+									</div>
+								</div>
+							</div>
+						</details>
+
+						<!-- Submit Button -->
+						<div class="submit-wrap">
+							<button type="submit" id="btn-generate" class="btn-primary">
+								<span class="btn-icon">⚡</span>
+								<span class="btn-text-label">Generate Image</span>
+							</button>
+						</div>
+					</form>
+				</section>
+
+				<!-- Right Column: Results & Gallery -->
+				<section class="panel results-panel">
+					<!-- Progress / Loading Banner -->
+					<div id="loading-state" class="state-container hidden">
+						<div class="spinner-ring"></div>
+						<h3 class="loading-title">Synthesizing image on Modal...</h3>
+						<p class="loading-desc">
+							Running GPU inference on Modal cloud.
+							<span class="cold-start-note">(First request may take ~45-60s during container cold start)</span>
+						</p>
+						<div class="elapsed-timer">Elapsed time: <span id="timer-val">0.0s</span></div>
+					</div>
+
+					<!-- Error State -->
+					<div id="error-state" class="state-container alert-error hidden">
+						<div class="alert-icon">⚠️</div>
+						<div class="alert-body">
+							<h4 id="error-title">Generation Failed</h4>
+							<p id="error-message">Could not connect to the Modal endpoint.</p>
+							<div class="cors-help" id="cors-help">
+								<strong>Troubleshooting Tip:</strong>
+								<ul>
+									<li>Ensure your Modal app is deployed: <code>modal deploy -m text_to_image.app</code></li>
+									<li>Check that your Endpoint URL above matches your deployed FastAPI endpoint.</li>
+									<li>If you see a CORS error in DevTools, ensure FastAPI in Modal permits cross-origin requests.</li>
+								</ul>
+							</div>
+						</div>
+					</div>
+
+					<!-- Empty Placeholder State -->
+					<div id="empty-state" class="state-container empty-placeholder">
+						<div class="placeholder-graphic">
+							<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+								<rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+								<circle cx="8.5" cy="8.5" r="1.5" />
+								<polyline points="21 15 16 10 5 21" />
+							</svg>
+						</div>
+						<h3>No Images Generated Yet</h3>
+						<p>Configure your prompt and click <strong>Generate Image</strong> to run inference on Modal.</p>
+					</div>
+
+					<!-- Active Gallery -->
+					<div id="gallery-container" class="gallery-container hidden">
+						<div class="gallery-header">
+							<h2>Generated Results</h2>
+							<div class="gallery-meta" id="gallery-meta"></div>
+						</div>
+						<div class="gallery-grid" id="gallery-grid"></div>
+					</div>
+				</section>
+			</main>
+		</div>
+
+		<!-- Full-size Image Lightbox Modal -->
+		<dialog id="lightbox" class="lightbox-dialog">
+			<div class="lightbox-content">
+				<button type="button" class="lightbox-close" id="lightbox-close">&times;</button>
+				<img id="lightbox-img" src="" alt="Enlarged view" />
+				<div class="lightbox-footer">
+					<a id="lightbox-download" href="" download="modal-diffusers-output.png" class="btn-download">
+						⬇ Download Full Resolution PNG
+					</a>
+				</div>
+			</div>
+		</dialog>
+
+		<script>
+			import { CONTROLNET_REGISTRY } from '../lib/controlnets';
+
+			// State variables
+			let controlImageB64 = '';
+			let timerInterval: number | null = null;
+			let startTime = 0;
+			let activePresetKey = 'none';
+
+			const samplePrompts = [
+				'A cinematic 35mm photo of a cybernetic red panda tinkering with a glowing motherboard, shallow depth of field, neon rim light',
+				'Ethereal oil painting of a solitary cottage nestled between dramatic fjords under the northern lights, expressive brush strokes',
+				'Detailed macro studio photograph of an intricate mechanical hummingbird made of glass and polished brass, golden hour lighting',
+				'Architectural concept of a solarpunk vertical garden library in Tokyo, morning mist, ray tracing, ultra realistic',
+				'Impressionist watercolor painting of a Parisian cafe during rain, reflections on cobblestones, cozy warm lights'
+			];
+
+			// DOM Elements
+			const endpointInput = document.getElementById('endpoint-url') as HTMLInputElement;
+			const endpointPing = document.getElementById('endpoint-ping') as HTMLElement;
+			const form = document.getElementById('generate-form') as HTMLFormElement;
+			const promptInput = document.getElementById('prompt-input') as HTMLTextAreaElement;
+			const negativePromptInput = document.getElementById('negative-prompt-input') as HTMLTextAreaElement;
+			const stepsInput = document.getElementById('steps-input') as HTMLInputElement;
+			const stepsVal = document.getElementById('steps-val') as HTMLElement;
+			const guidanceInput = document.getElementById('guidance-input') as HTMLInputElement;
+			const guidanceVal = document.getElementById('guidance-val') as HTMLElement;
+			const numImagesSelect = document.getElementById('num-images-select') as HTMLSelectElement;
+			const seedInput = document.getElementById('seed-input') as HTMLInputElement;
+			const btnRandomSeed = document.getElementById('btn-random-seed') as HTMLButtonElement;
+			const btnSamplePrompt = document.getElementById('btn-sample-prompt') as HTMLButtonElement;
+			
+			// ControlNet DOM Elements
+			const cnetAccordion = document.getElementById('controlnet-accordion') as HTMLDetailsElement;
+			const cnetSummaryStatus = document.getElementById('cnet-summary-status') as HTMLElement;
+			const cnetMappingBadge = document.getElementById('cnet-mapping-badge') as HTMLElement;
+			const cnetRepoNote = document.getElementById('cnet-repo-note') as HTMLElement;
+			const controlnetIdInput = document.getElementById('controlnet-id') as HTMLInputElement;
+			const controlnetScaleInput = document.getElementById('controlnet-scale') as HTMLInputElement;
+			const controlnetScaleVal = document.getElementById('controlnet-scale-val') as HTMLElement;
+			const pillCustom = document.getElementById('pill-custom') as HTMLElement;
+			const presetPills = document.querySelectorAll('.preset-pill');
+
+			const fileInput = document.getElementById('control-image-file') as HTMLInputElement;
+			const dropzone = document.getElementById('dropzone') as HTMLElement;
+			const dropzoneText = document.getElementById('dropzone-text') as HTMLElement;
+			const previewWrap = document.getElementById('preview-wrap') as HTMLElement;
+			const previewImg = document.getElementById('control-image-preview') as HTMLImageElement;
+			const btnRemoveControl = document.getElementById('btn-remove-control-img') as HTMLButtonElement;
+			const btnGenerate = document.getElementById('btn-generate') as HTMLButtonElement;
+			const loadingState = document.getElementById('loading-state') as HTMLElement;
+			const errorState = document.getElementById('error-state') as HTMLElement;
+			const errorTitle = document.getElementById('error-title') as HTMLElement;
+			const errorMessage = document.getElementById('error-message') as HTMLElement;
+			const emptyState = document.getElementById('empty-state') as HTMLElement;
+			const galleryContainer = document.getElementById('gallery-container') as HTMLElement;
+			const galleryGrid = document.getElementById('gallery-grid') as HTMLElement;
+			const galleryMeta = document.getElementById('gallery-meta') as HTMLElement;
+			const timerVal = document.getElementById('timer-val') as HTMLElement;
+			const lightbox = document.getElementById('lightbox') as HTMLDialogElement;
+			const lightboxImg = document.getElementById('lightbox-img') as HTMLImageElement;
+			const lightboxClose = document.getElementById('lightbox-close') as HTMLButtonElement;
+			const lightboxDownload = document.getElementById('lightbox-download') as HTMLAnchorElement;
+
+			// Helper to get currently active model engine
+			function getSelectedModel(): 'sdxl' | 'flux' {
+				const checked = document.querySelector('input[name="model_type"]:checked') as HTMLInputElement;
+				return (checked?.value?.toLowerCase() === 'flux') ? 'flux' : 'sdxl';
+			}
+
+			// ControlNet Preset logic
+			function applyControlNetPreset(key: string, updateInput: boolean = true) {
+				activePresetKey = key;
+				const currentModel = getSelectedModel();
+
+				// Update pill active classes
+				presetPills.forEach((pill) => {
+					const pKey = pill.getAttribute('data-preset-key');
+					if (pKey === key) {
+						pill.classList.add('active');
+					} else {
+						pill.classList.remove('active');
+					}
+				});
+
+				// Handle custom override state
+				if (key === 'custom') {
+					if (pillCustom) pillCustom.style.display = 'inline-flex';
+					cnetMappingBadge.textContent = 'Custom Override';
+					cnetMappingBadge.className = 'mapping-badge badge-custom';
+					cnetSummaryStatus.textContent = 'Custom Model Repo';
+					cnetRepoNote.textContent = 'Custom HuggingFace repository ID entered manually.';
+					return;
+				}
+
+				if (pillCustom) pillCustom.style.display = 'none';
+
+				// Handle None
+				if (key === 'none') {
+					if (updateInput) controlnetIdInput.value = '';
+					cnetMappingBadge.textContent = 'None';
+					cnetMappingBadge.className = 'mapping-badge badge-none';
+					cnetSummaryStatus.textContent = 'Disabled (None)';
+					cnetRepoNote.textContent = 'ControlNet is disabled. Select a preset or type a repo ID above to activate.';
+					return;
+				}
+
+				const config = CONTROLNET_REGISTRY[key];
+				if (config) {
+					const repo = config[currentModel] || '';
+					if (updateInput) {
+						controlnetIdInput.value = repo;
+					}
+					if (config.defaultScale !== undefined) {
+						controlnetScaleInput.value = String(config.defaultScale);
+						controlnetScaleVal.textContent = Number(config.defaultScale).toFixed(2);
+					}
+					cnetMappingBadge.textContent = `Auto-mapped (${currentModel.toUpperCase()})`;
+					cnetMappingBadge.className = 'mapping-badge badge-preset';
+					cnetSummaryStatus.textContent = `${config.label} [${currentModel.toUpperCase()}]`;
+					cnetRepoNote.textContent = `Preset active: "${config.label}". Auto-switches between SDXL & FLUX repos when changing model engine.`;
+				}
+			}
+
+			// Attach preset pill clicks
+			presetPills.forEach((pill) => {
+				pill.addEventListener('click', () => {
+					const key = pill.getAttribute('data-preset-key');
+					if (key) {
+						applyControlNetPreset(key, true);
+					}
+				});
+			});
+
+			// Manual override detection on input
+			controlnetIdInput.addEventListener('input', () => {
+				const val = controlnetIdInput.value.trim();
+				const currentModel = getSelectedModel();
+
+				if (!val) {
+					applyControlNetPreset('none', false);
+					return;
+				}
+
+				// Check if manual value matches an existing preset for current model
+				let matchedKey: string | null = null;
+				for (const [key, cfg] of Object.entries(CONTROLNET_REGISTRY || {})) {
+					if (key !== 'none' && cfg[currentModel]?.toLowerCase() === val.toLowerCase()) {
+						matchedKey = key;
+						break;
+					}
+				}
+
+				if (matchedKey) {
+					applyControlNetPreset(matchedKey, false);
+				} else {
+					applyControlNetPreset('custom', false);
+				}
+			});
+
+			// Restore saved endpoint from LocalStorage
+			const savedEndpoint = localStorage.getItem('modal_diffusers_endpoint') || '';
+			if (savedEndpoint) {
+				endpointInput.value = savedEndpoint;
+				endpointPing.classList.add('connected');
+			}
+
+			endpointInput.addEventListener('input', () => {
+				const val = endpointInput.value.trim();
+				localStorage.setItem('modal_diffusers_endpoint', val);
+				if (val) {
+					endpointPing.classList.add('connected');
+				} else {
+					endpointPing.classList.remove('connected');
+				}
+			});
+
+			// Sync slider values
+			stepsInput.addEventListener('input', () => {
+				stepsVal.textContent = stepsInput.value;
+			});
+
+			guidanceInput.addEventListener('input', () => {
+				guidanceVal.textContent = guidanceInput.value;
+			});
+
+			controlnetScaleInput.addEventListener('input', () => {
+				controlnetScaleVal.textContent = Number(controlnetScaleInput.value).toFixed(2);
+			});
+
+			// Model selection cards highlight & ControlNet sync
+			const modelRadios = document.querySelectorAll('input[name="model_type"]');
+			modelRadios.forEach((radio) => {
+				radio.addEventListener('change', () => {
+					document.querySelectorAll('.model-option').forEach((opt) => opt.classList.remove('active'));
+					radio.closest('.model-option')?.classList.add('active');
+
+					// When switching model, update ControlNet preset if a standard preset is selected
+					if (activePresetKey !== 'none' && activePresetKey !== 'custom') {
+						applyControlNetPreset(activePresetKey, true);
+					}
+				});
+			});
+
+			// Random prompt
+			btnSamplePrompt.addEventListener('click', () => {
+				const randomPrompt = samplePrompts[Math.floor(Math.random() * samplePrompts.length)];
+				promptInput.value = randomPrompt;
+			});
+
+			// Random seed
+			btnRandomSeed.addEventListener('click', () => {
+				seedInput.value = String(Math.floor(Math.random() * 2147483647));
+			});
+
+			// File upload handling for ControlNet
+			function handleFile(file: File) {
+				if (!file.type.startsWith('image/')) {
+					alert('Please upload an image file.');
+					return;
+				}
+				const reader = new FileReader();
+				reader.onload = (e) => {
+					const result = e.target?.result as string;
+					previewImg.src = result;
+					// Extract base64 part
+					controlImageB64 = result.split(',')[1] || '';
+					dropzoneText.classList.add('hidden');
+					previewWrap.classList.remove('hidden');
+				};
+				reader.readAsDataURL(file);
+			}
+
+			fileInput.addEventListener('change', () => {
+				if (fileInput.files && fileInput.files[0]) {
+					handleFile(fileInput.files[0]);
+				}
+			});
+
+			btnRemoveControl.addEventListener('click', (e) => {
+				e.stopPropagation();
+				controlImageB64 = '';
+				fileInput.value = '';
+				previewImg.src = '';
+				dropzoneText.classList.remove('hidden');
+				previewWrap.classList.add('hidden');
+			});
+
+			// Drag and drop
+			dropzone.addEventListener('dragover', (e) => {
+				e.preventDefault();
+				dropzone.classList.add('dragover');
+			});
+			dropzone.addEventListener('dragleave', () => {
+				dropzone.classList.remove('dragover');
+			});
+			dropzone.addEventListener('drop', (e) => {
+				e.preventDefault();
+				dropzone.classList.remove('dragover');
+				if (e.dataTransfer?.files && e.dataTransfer.files[0]) {
+					handleFile(e.dataTransfer.files[0]);
+				}
+			});
+
+			// Lightbox
+			lightboxClose.addEventListener('click', () => lightbox.close());
+			lightbox.addEventListener('click', (e) => {
+				if (e.target === lightbox) lightbox.close();
+			});
+
+			// Form submission
+			form.addEventListener('submit', async (e) => {
+				e.preventDefault();
+
+				const url = endpointInput.value.trim();
+				if (!url) {
+					alert('Please enter your Modal endpoint URL in the top header bar.');
+					endpointInput.focus();
+					return;
+				}
+
+				const prompt = promptInput.value.trim();
+				if (!prompt) {
+					promptInput.focus();
+					return;
+				}
+
+				const selectedModel = getSelectedModel();
+				const negativePrompt = negativePromptInput.value.trim();
+				const steps = parseInt(stepsInput.value, 10);
+				const guidanceScale = parseFloat(guidanceInput.value);
+				const numImages = parseInt(numImagesSelect.value, 10);
+				const seed = seedInput.value.trim() !== '' ? parseInt(seedInput.value, 10) : null;
+				const controlnetId = controlnetIdInput.value.trim();
+				const controlnetScale = parseFloat(controlnetScaleInput.value);
+
+				// Prepare payload matching GenerateRequest in src/diffusers_backend_platform/text_to_image/app.py
+				const payload: Record<string, any> = {
+					model_type: selectedModel,
+					prompt: prompt,
+					negative_prompt: negativePrompt,
+					steps: steps,
+					guidance_scale: guidanceScale,
+					num_images: numImages,
+					seed: seed,
+				};
+
+				if (controlnetId && controlImageB64) {
+					payload.controlnet_id = controlnetId;
+					payload.control_image_b64 = controlImageB64;
+					payload.controlnet_scale = controlnetScale;
+				}
+
+				// UI Loading transition
+				btnGenerate.disabled = true;
+				loadingState.classList.remove('hidden');
+				errorState.classList.add('hidden');
+				emptyState.classList.add('hidden');
+
+				startTime = Date.now();
+				timerVal.textContent = '0.0s';
+				if (timerInterval) clearInterval(timerInterval);
+				timerInterval = window.setInterval(() => {
+					const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+					timerVal.textContent = `${elapsed}s`;
+				}, 100);
+
+				try {
+					const response = await fetch(url, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify(payload),
+					});
+
+					if (!response.ok) {
+						const errData = await response.text();
+						throw new Error(`Server returned HTTP ${response.status}: ${errData}`);
+					}
+
+					const data = await response.json();
+					if (!data || !Array.isArray(data.images) || data.images.length === 0) {
+						throw new Error('Response did not contain the expected "images" array.');
+					}
+
+					renderResults(data.images, {
+						model: selectedModel.toUpperCase(),
+						steps,
+						guidance: guidanceScale,
+						seed: seed ?? 'Random',
+						prompt,
+						controlnet: controlnetId ? (activePresetKey !== 'none' ? activePresetKey : 'Custom') : null
+					});
+
+					loadingState.classList.add('hidden');
+					galleryContainer.classList.remove('hidden');
+				} catch (err: any) {
+					loadingState.classList.add('hidden');
+					errorState.classList.remove('hidden');
+					errorTitle.textContent = 'Error Requesting Image';
+					errorMessage.textContent = err.message || String(err);
+				} finally {
+					btnGenerate.disabled = false;
+					if (timerInterval) clearInterval(timerInterval);
+				}
+			});
+
+			function renderResults(images: string[], meta: { model: string; steps: number; guidance: number; seed: any; prompt: string; controlnet: string | null }) {
+				galleryGrid.innerHTML = '';
+				galleryMeta.innerHTML = `
+					<span class="chip chip-model">${meta.model}</span>
+					<span class="chip">Steps: ${meta.steps}</span>
+					<span class="chip">Guidance: ${meta.guidance}</span>
+					<span class="chip">Seed: ${meta.seed}</span>
+					${meta.controlnet ? `<span class="chip chip-cnet">ControlNet: ${meta.controlnet}</span>` : ''}
+				`;
+
+				images.forEach((b64, idx) => {
+					const dataUri = `data:image/png;base64,${b64}`;
+					const card = document.createElement('div');
+					card.className = 'gallery-card';
+
+					const filename = `modal-${meta.model.toLowerCase()}-${Date.now()}-${idx + 1}.png`;
+
+					card.innerHTML = `
+						<div class="image-wrapper">
+							<img src="${dataUri}" alt="${meta.prompt.replace(/"/g, '&quot;')}" loading="lazy" />
+							<div class="image-overlay">
+								<button type="button" class="btn-overlay btn-preview" title="View Fullscreen">🔍</button>
+								<a href="${dataUri}" download="${filename}" class="btn-overlay btn-download" title="Download PNG">⬇</a>
+							</div>
+						</div>
+						<div class="card-caption">
+							<p class="card-prompt" title="${meta.prompt}">${meta.prompt}</p>
+							<a href="${dataUri}" download="${filename}" class="download-link">Download PNG</a>
+						</div>
+					`;
+
+					card.querySelector('.btn-preview')?.addEventListener('click', () => {
+						lightboxImg.src = dataUri;
+						lightboxDownload.href = dataUri;
+						lightboxDownload.download = filename;
+						lightbox.showModal();
+					});
+
+					galleryGrid.appendChild(card);
+				});
+			}
+		</script>
+
+		<style>
+			:root {
+				--bg-base: #0b0f17;
+				--bg-surface: #111726;
+				--bg-surface-elevated: #1a2236;
+				--border-color: rgba(255, 255, 255, 0.08);
+				--border-hover: rgba(255, 255, 255, 0.18);
+				--primary: #6366f1;
+				--primary-hover: #4f46e5;
+				--accent: #ec4899;
+				--accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+				--text-main: #f8fafc;
+				--text-muted: #94a3b8;
+				--text-subtle: #64748b;
+				--success: #10b981;
+				--error: #ef4444;
+				--radius-lg: 16px;
+				--radius-md: 10px;
+				--radius-sm: 6px;
+				--font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+				--font-mono: 'JetBrains Mono', monospace;
+			}
+
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+
+			body {
+				background-color: var(--bg-base);
+				color: var(--text-main);
+				font-family: var(--font-sans);
+				line-height: 1.5;
+				min-height: 100vh;
+				padding: 1.5rem;
+			}
+
+			.app-layout {
+				max-width: 1400px;
+				margin: 0 auto;
+				display: flex;
+				flex-direction: column;
+				gap: 1.5rem;
+			}
+
+			/* Header */
+			.app-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				background: var(--bg-surface);
+				border: 1px solid var(--border-color);
+				border-radius: var(--radius-lg);
+				padding: 1rem 1.5rem;
+				flex-wrap: wrap;
+				gap: 1rem;
+			}
+
+			.brand {
+				display: flex;
+				align-items: center;
+				gap: 0.85rem;
+			}
+
+			.brand-logo {
+				width: 42px;
+				height: 42px;
+				border-radius: 12px;
+				background: var(--accent-gradient);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				color: white;
+				box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+			}
+
+			.brand h1 {
+				font-size: 1.25rem;
+				font-weight: 800;
+				letter-spacing: -0.02em;
+			}
+
+			.subtitle {
+				font-size: 0.8rem;
+				color: var(--text-muted);
+			}
+
+			.endpoint-status-bar {
+				display: flex;
+				align-items: center;
+				gap: 0.75rem;
+				flex-wrap: wrap;
+			}
+
+			.endpoint-label {
+				font-size: 0.85rem;
+				color: var(--text-muted);
+				font-weight: 500;
+			}
+
+			.endpoint-input-wrap {
+				position: relative;
+				display: flex;
+				align-items: center;
+			}
+
+			.endpoint-input-wrap input {
+				background: var(--bg-base);
+				border: 1px solid var(--border-color);
+				color: var(--text-main);
+				font-family: var(--font-mono);
+				font-size: 0.8rem;
+				padding: 0.45rem 2rem 0.45rem 0.85rem;
+				border-radius: var(--radius-md);
+				width: 380px;
+				max-width: 100%;
+				transition: border-color 0.2s;
+			}
+
+			.endpoint-input-wrap input:focus {
+				outline: none;
+				border-color: var(--primary);
+			}
+
+			.status-indicator {
+				position: absolute;
+				right: 10px;
+				width: 9px;
+				height: 9px;
+				border-radius: 50%;
+				background: var(--text-subtle);
+			}
+
+			.status-indicator.connected {
+				background: var(--success);
+				box-shadow: 0 0 8px var(--success);
+			}
+
+			/* Main Content Grid */
+			.main-content {
+				display: grid;
+				grid-template-columns: 460px 1fr;
+				gap: 1.5rem;
+				align-items: start;
+			}
+
+			@media (max-width: 1024px) {
+				.main-content {
+					grid-template-columns: 1fr;
+				}
+				.endpoint-input-wrap input {
+					width: 100%;
+				}
+			}
+
+			/* Panels */
+			.panel {
+				background: var(--bg-surface);
+				border: 1px solid var(--border-color);
+				border-radius: var(--radius-lg);
+				padding: 1.5rem;
+			}
+
+			/* Form Elements */
+			.form-group {
+				display: flex;
+				flex-direction: column;
+				gap: 0.5rem;
+				margin-bottom: 1.25rem;
+			}
+
+			.label-row {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}
+
+			.section-label,
+			label {
+				font-size: 0.85rem;
+				font-weight: 600;
+				color: var(--text-main);
+			}
+
+			.required {
+				color: var(--accent);
+			}
+
+			.btn-text {
+				background: none;
+				border: none;
+				color: var(--primary);
+				font-size: 0.78rem;
+				font-weight: 600;
+				cursor: pointer;
+				padding: 0;
+			}
+
+			.btn-text:hover {
+				text-decoration: underline;
+			}
+
+			textarea,
+			input[type='text'],
+			input[type='number'],
+			select {
+				background: var(--bg-base);
+				border: 1px solid var(--border-color);
+				border-radius: var(--radius-md);
+				color: var(--text-main);
+				font-family: inherit;
+				font-size: 0.9rem;
+				padding: 0.65rem 0.85rem;
+				transition: border-color 0.2s, box-shadow 0.2s;
+			}
+
+			textarea:focus,
+			input[type='text']:focus,
+			input[type='number']:focus,
+			select:focus {
+				outline: none;
+				border-color: var(--primary);
+				box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+			}
+
+			/* Model Radiogroup */
+			.model-toggle {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 0.75rem;
+			}
+
+			.model-option input {
+				display: none;
+			}
+
+			.option-card {
+				background: var(--bg-base);
+				border: 1px solid var(--border-color);
+				border-radius: var(--radius-md);
+				padding: 0.85rem;
+				cursor: pointer;
+				display: flex;
+				flex-direction: column;
+				gap: 0.35rem;
+				transition: all 0.2s;
+			}
+
+			.model-option:hover .option-card {
+				border-color: var(--border-hover);
+			}
+
+			.model-option.active .option-card {
+				border-color: var(--primary);
+				background: rgba(99, 102, 241, 0.08);
+			}
+
+			.model-name {
+				font-weight: 700;
+				font-size: 0.95rem;
+			}
+
+			.model-badge {
+				align-self: flex-start;
+				font-size: 0.68rem;
+				font-weight: 600;
+				padding: 0.15rem 0.45rem;
+				border-radius: 4px;
+				background: rgba(255, 255, 255, 0.08);
+				color: var(--text-muted);
+			}
+
+			.badge-accent {
+				background: rgba(236, 72, 153, 0.2);
+				color: #f472b6;
+			}
+
+			.model-desc {
+				font-size: 0.75rem;
+				color: var(--text-muted);
+			}
+
+			/* Settings Grid */
+			.settings-grid {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 1rem;
+				margin-bottom: 1.25rem;
+			}
+
+			.param-val {
+				font-family: var(--font-mono);
+				font-size: 0.8rem;
+				color: var(--primary);
+				font-weight: 600;
+			}
+
+			.param-hint {
+				font-size: 0.75rem;
+				color: var(--text-subtle);
+			}
+
+			input[type='range'] {
+				accent-color: var(--primary);
+				cursor: pointer;
+			}
+
+			/* ControlNet Accordion & Presets */
+			.controlnet-accordion {
+				background: var(--bg-surface-elevated);
+				border: 1px solid var(--border-color);
+				border-radius: var(--radius-md);
+				padding: 0.75rem 1rem;
+				margin-bottom: 1.5rem;
+			}
+
+			.controlnet-accordion summary {
+				font-size: 0.85rem;
+				font-weight: 600;
+				cursor: pointer;
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				user-select: none;
+			}
+
+			.summary-hint {
+				font-size: 0.75rem;
+				color: var(--primary);
+				font-weight: 500;
+			}
+
+			.controlnet-content {
+				margin-top: 1rem;
+				display: flex;
+				flex-direction: column;
+				gap: 0.85rem;
+			}
+
+			/* Quick Preset Pills */
+			.preset-pill-group {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 0.45rem;
+			}
+
+			.preset-pill {
+				background: var(--bg-base);
+				border: 1px solid var(--border-color);
+				color: var(--text-muted);
+				font-size: 0.75rem;
+				font-weight: 500;
+				padding: 0.35rem 0.65rem;
+				border-radius: 20px;
+				cursor: pointer;
+				transition: all 0.15s;
+			}
+
+			.preset-pill:hover {
+				border-color: var(--border-hover);
+				color: var(--text-main);
+			}
+
+			.preset-pill.active {
+				background: rgba(99, 102, 241, 0.18);
+				border-color: var(--primary);
+				color: #a5b4fc;
+				font-weight: 700;
+				box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+			}
+
+			.preset-pill-custom.active {
+				background: rgba(236, 72, 153, 0.18);
+				border-color: var(--accent);
+				color: #f472b6;
+			}
+
+			/* Mapping Badge */
+			.mapping-badge {
+				font-size: 0.68rem;
+				font-weight: 600;
+				padding: 0.15rem 0.45rem;
+				border-radius: 4px;
+				text-transform: uppercase;
+				letter-spacing: 0.03em;
+			}
+
+			.badge-none {
+				background: rgba(255, 255, 255, 0.06);
+				color: var(--text-subtle);
+			}
+
+			.badge-preset {
+				background: rgba(99, 102, 241, 0.15);
+				color: #a5b4fc;
+				border: 1px solid rgba(99, 102, 241, 0.3);
+			}
+
+			.badge-custom {
+				background: rgba(236, 72, 153, 0.15);
+				color: #f472b6;
+				border: 1px solid rgba(236, 72, 153, 0.3);
+			}
+
+			.subtext-note {
+				font-size: 0.72rem;
+				color: var(--text-subtle);
+				margin-top: -0.25rem;
+			}
+
+			/* File Dropzone */
+			.file-dropzone {
+				position: relative;
+				border: 2px dashed var(--border-color);
+				border-radius: var(--radius-md);
+				padding: 1.25rem;
+				text-align: center;
+				cursor: pointer;
+				background: var(--bg-base);
+				transition: border-color 0.2s;
+			}
+
+			.file-dropzone.dragover {
+				border-color: var(--primary);
+			}
+
+			.file-input {
+				position: absolute;
+				inset: 0;
+				opacity: 0;
+				cursor: pointer;
+				width: 100%;
+				height: 100%;
+			}
+
+			.dropzone-label {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 0.4rem;
+				color: var(--text-muted);
+				font-size: 0.8rem;
+			}
+
+			.preview-wrap {
+				position: relative;
+				display: inline-block;
+			}
+
+			.preview-wrap img {
+				max-height: 140px;
+				border-radius: var(--radius-sm);
+				display: block;
+			}
+
+			.btn-clear {
+				position: absolute;
+				top: -8px;
+				right: -8px;
+				background: var(--error);
+				color: white;
+				border: none;
+				border-radius: 50%;
+				width: 22px;
+				height: 22px;
+				cursor: pointer;
+				font-size: 14px;
+				line-height: 1;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+			}
+
+			/* Submit Button */
+			.submit-wrap {
+				margin-top: 0.5rem;
+			}
+
+			.btn-primary {
+				width: 100%;
+				background: var(--accent-gradient);
+				color: white;
+				border: none;
+				border-radius: var(--radius-md);
+				padding: 0.9rem;
+				font-size: 0.95rem;
+				font-weight: 700;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 0.5rem;
+				box-shadow: 0 4px 18px rgba(99, 102, 241, 0.35);
+				transition: transform 0.15s, opacity 0.2s;
+			}
+
+			.btn-primary:hover:not(:disabled) {
+				transform: translateY(-1px);
+				box-shadow: 0 6px 22px rgba(99, 102, 241, 0.5);
+			}
+
+			.btn-primary:active:not(:disabled) {
+				transform: translateY(1px);
+			}
+
+			.btn-primary:disabled {
+				opacity: 0.6;
+				cursor: not-allowed;
+			}
+
+			/* States & Results Panel */
+			.results-panel {
+				min-height: 600px;
+				display: flex;
+				flex-direction: column;
+			}
+
+			.state-container {
+				margin: auto;
+				text-align: center;
+				padding: 3rem 1.5rem;
+				max-width: 500px;
+			}
+
+			.empty-placeholder {
+				color: var(--text-muted);
+			}
+
+			.placeholder-graphic {
+				color: var(--text-subtle);
+				margin-bottom: 1rem;
+			}
+
+			.empty-placeholder h3 {
+				color: var(--text-main);
+				font-size: 1.15rem;
+				margin-bottom: 0.5rem;
+			}
+
+			/* Loading Spinner */
+			.spinner-ring {
+				width: 56px;
+				height: 56px;
+				margin: 0 auto 1.5rem;
+				border: 4px solid rgba(99, 102, 241, 0.15);
+				border-left-color: var(--primary);
+				border-radius: 50%;
+				animation: spin 1s linear infinite;
+			}
+
+			@keyframes spin {
+				to {
+					transform: rotate(360deg);
+				}
+			}
+
+			.loading-title {
+				font-size: 1.2rem;
+				font-weight: 700;
+				margin-bottom: 0.5rem;
+			}
+
+			.loading-desc {
+				font-size: 0.85rem;
+				color: var(--text-muted);
+			}
+
+			.cold-start-note {
+				display: block;
+				margin-top: 0.35rem;
+				color: var(--accent);
+				font-size: 0.8rem;
+			}
+
+			.elapsed-timer {
+				margin-top: 1.25rem;
+				font-family: var(--font-mono);
+				font-size: 0.85rem;
+				background: var(--bg-surface-elevated);
+				padding: 0.35rem 0.85rem;
+				border-radius: 20px;
+				display: inline-block;
+				border: 1px solid var(--border-color);
+			}
+
+			/* Alert / Error */
+			.alert-error {
+				background: rgba(239, 68, 68, 0.08);
+				border: 1px solid rgba(239, 68, 68, 0.25);
+				border-radius: var(--radius-md);
+				text-align: left;
+				padding: 1.5rem;
+				display: flex;
+				gap: 1rem;
+			}
+
+			.alert-icon {
+				font-size: 1.5rem;
+			}
+
+			.alert-body h4 {
+				color: var(--error);
+				margin-bottom: 0.4rem;
+			}
+
+			.alert-body p {
+				font-size: 0.85rem;
+				color: var(--text-muted);
+				word-break: break-word;
+			}
+
+			.cors-help {
+				margin-top: 1rem;
+				padding-top: 0.75rem;
+				border-top: 1px solid rgba(239, 68, 68, 0.2);
+				font-size: 0.8rem;
+				color: var(--text-muted);
+			}
+
+			.cors-help code {
+				background: var(--bg-base);
+				padding: 0.15rem 0.4rem;
+				border-radius: 4px;
+				font-family: var(--font-mono);
+				color: #cbd5e1;
+			}
+
+			.cors-help ul {
+				margin-left: 1.25rem;
+				margin-top: 0.35rem;
+			}
+
+			/* Gallery */
+			.gallery-container {
+				display: flex;
+				flex-direction: column;
+				gap: 1.25rem;
+			}
+
+			.gallery-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				flex-wrap: wrap;
+				gap: 0.75rem;
+				padding-bottom: 1rem;
+				border-bottom: 1px solid var(--border-color);
+			}
+
+			.gallery-header h2 {
+				font-size: 1.25rem;
+				font-weight: 700;
+			}
+
+			.gallery-meta {
+				display: flex;
+				gap: 0.5rem;
+				flex-wrap: wrap;
+			}
+
+			.chip {
+				font-size: 0.75rem;
+				background: var(--bg-surface-elevated);
+				border: 1px solid var(--border-color);
+				padding: 0.2rem 0.6rem;
+				border-radius: 12px;
+				color: var(--text-muted);
+			}
+
+			.chip-model {
+				background: rgba(99, 102, 241, 0.15);
+				border-color: rgba(99, 102, 241, 0.3);
+				color: #818cf8;
+				font-weight: 700;
+			}
+
+			.chip-cnet {
+				background: rgba(236, 72, 153, 0.15);
+				border-color: rgba(236, 72, 153, 0.3);
+				color: #f472b6;
+				font-weight: 600;
+			}
+
+			.gallery-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+				gap: 1.25rem;
+			}
+
+			.gallery-card {
+				background: var(--bg-base);
+				border: 1px solid var(--border-color);
+				border-radius: var(--radius-md);
+				overflow: hidden;
+				display: flex;
+				flex-direction: column;
+				transition: border-color 0.2s, transform 0.2s;
+			}
+
+			.gallery-card:hover {
+				border-color: var(--border-hover);
+				transform: translateY(-2px);
+			}
+
+			.image-wrapper {
+				position: relative;
+				aspect-ratio: 1 / 1;
+				background: #000;
+				overflow: hidden;
+			}
+
+			.image-wrapper img {
+				width: 100%;
+				height: 100%;
+				object-fit: cover;
+				display: block;
+			}
+
+			.image-overlay {
+				position: absolute;
+				inset: 0;
+				background: rgba(0, 0, 0, 0.45);
+				opacity: 0;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 0.75rem;
+				transition: opacity 0.2s;
+			}
+
+			.image-wrapper:hover .image-overlay {
+				opacity: 1;
+			}
+
+			.btn-overlay {
+				background: rgba(255, 255, 255, 0.9);
+				color: #0b0f17;
+				border: none;
+				border-radius: 50%;
+				width: 44px;
+				height: 44px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 1.1rem;
+				cursor: pointer;
+				text-decoration: none;
+				box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+				transition: transform 0.15s;
+			}
+
+			.btn-overlay:hover {
+				transform: scale(1.08);
+			}
+
+			.card-caption {
+				padding: 0.85rem;
+				display: flex;
+				flex-direction: column;
+				gap: 0.4rem;
+			}
+
+			.card-prompt {
+				font-size: 0.8rem;
+				color: var(--text-muted);
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+
+			.download-link {
+				color: var(--primary);
+				font-size: 0.78rem;
+				font-weight: 600;
+				text-decoration: none;
+			}
+
+			.download-link:hover {
+				text-decoration: underline;
+			}
+
+			/* Lightbox Dialog */
+			.lightbox-dialog {
+				background: transparent;
+				border: none;
+				padding: 0;
+				max-width: 90vw;
+				max-height: 90vh;
+				margin: auto;
+			}
+
+			.lightbox-dialog::backdrop {
+				background: rgba(0, 0, 0, 0.85);
+				backdrop-filter: blur(8px);
+			}
+
+			.lightbox-content {
+				position: relative;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 1rem;
+			}
+
+			.lightbox-content img {
+				max-width: 85vw;
+				max-height: 80vh;
+				border-radius: var(--radius-md);
+				box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+			}
+
+			.lightbox-close {
+				position: absolute;
+				top: -16px;
+				right: -16px;
+				background: white;
+				color: black;
+				border: none;
+				border-radius: 50%;
+				width: 36px;
+				height: 36px;
+				font-size: 20px;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+			}
+
+			.btn-download {
+				background: var(--bg-surface-elevated);
+				border: 1px solid var(--border-color);
+				color: white;
+				text-decoration: none;
+				padding: 0.6rem 1.2rem;
+				border-radius: var(--radius-md);
+				font-size: 0.85rem;
+				font-weight: 600;
+				transition: background 0.2s;
+			}
+
+			.btn-download:hover {
+				background: var(--primary);
+			}
+
+			.hidden {
+				display: none !important;
+			}
+		</style>
+	</body>
+</html>

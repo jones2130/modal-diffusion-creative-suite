@@ -77,3 +77,17 @@ def generate(req: GenerateRequest):
 def fastapi_app():
     return web_app
 ```
+
+---
+
+## 🌐 Deploying to GitHub Pages
+
+This frontend is configured for automated deployment to GitHub Pages via GitHub Actions:
+
+1. Push your code to GitHub.
+2. In your GitHub repository settings:
+   - Navigate to **Settings** > **Pages**.
+   - Under **Build and deployment** > **Source**, select **GitHub Actions**.
+3. Push to `main` or `master` (or manually trigger the **Deploy Frontend to GitHub Pages** workflow in the Actions tab).
+4. Your site will be live at `https://<username>.github.io/<repo-name>/`.
+

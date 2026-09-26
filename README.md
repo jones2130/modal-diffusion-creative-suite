@@ -184,10 +184,24 @@ The frontend includes quick-selection presets defined in [`frontend/src/lib/cont
 
 ---
 
+## 🌐 GitHub Pages Deployment
+
+The frontend is ready for automated zero-config deployment to **GitHub Pages**:
+
+1. Push your repository to GitHub.
+2. In your GitHub repository:
+   - Go to **Settings** > **Pages**.
+   - Under **Build and deployment** > **Source**, change the dropdown from *Deploy from a branch* to **GitHub Actions**.
+3. Push to `main` or `master` branch. The included GitHub Actions workflow ([`.github/workflows/deploy-pages.yml`](file:///.github/workflows/deploy-pages.yml)) will build and deploy the site automatically.
+4. Your Studio interface will be live at `https://<your-username>.github.io/<repo-name>/`.
+
+---
+
 ## 🔒 Security & Privacy Audit Checklist
 
 Before pushing this repository to a public or shared remote:
 
+- [x] **Safe for GitHub Pages**: The frontend is a static client that does NOT bundle your Modal credentials, endpoint URL, or API keys. Visitors provide their own endpoint in the UI (stored only in their browser's local storage).
 - [x] **No hardcoded secrets or tokens**: All Hugging Face and API tokens are dynamically resolved via Modal Cloud Secrets (`modal.Secret.from_name("hf-secret")`).
 - [x] **No Modal credentials tracked**: Modal credentials reside exclusively in `~/.modal.toml` (outside the repository).
 - [x] **Gitignore protection**: `.gitignore` blocks `.env*`, `.modal.toml`, `node_modules/`, `.astro/`, `.venv/`, and generated images (`*.png`, `bootstrap-results-*`).

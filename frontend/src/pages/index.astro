@@ -144,7 +144,24 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 									<label for="seed-input">Seed</label>
 									<button type="button" id="btn-random-seed" class="btn-text">Randomize</button>
 								</div>
-								<input type="number" id="seed-input" name="seed" placeholder="Random (blank)" />
+								<input type="number" id="seed-input" name="seed" value="-1" placeholder="-1 for random" />
+							</div>
+						</div>
+
+						<!-- SDXL Lightning 4-step LoRA Option -->
+						<div class="form-group lora-setting-wrap" id="lora-setting-container">
+							<div class="lora-toggle-card">
+								<div class="lora-info">
+									<div class="lora-header">
+										<span class="lora-title">⚡ SDXL Lightning 4-Step</span>
+										<span class="lora-badge">SDXL Only</span>
+									</div>
+									<span class="lora-desc">Enables ByteDance SDXL-Lightning 4-step LoRA distillation (locks steps to 4)</span>
+								</div>
+								<label class="switch-wrap">
+									<input type="checkbox" id="enable-4step-lora" name="enable_4step_lora" />
+									<span class="switch-slider"></span>
+								</label>
 							</div>
 						</div>
 
@@ -162,6 +179,15 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 										<span class="param-hint">Auto-maps to SDXL or FLUX</span>
 									</div>
 									<div class="preset-pill-group" role="group" aria-label="ControlNet Presets">
+										<button
+											type="button"
+											class="preset-pill preset-pill-special"
+											data-preset-key="photo-to-lineart"
+											id="pill-preset-photo-to-lineart"
+											title="Photo to Lineart: Canny ControlNet + 4-Step LoRA + Line art styling (SDXL only)"
+										>
+											🎨 Photo to Lineart
+										</button>
 										{Object.entries(CONTROLNET_REGISTRY || {}).map(([key, config]) => (
 											<button
 												type="button"
@@ -216,6 +242,41 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 										step="0.05"
 										value="0.6"
 									/>
+								</div>
+
+								<!-- Control Guidance Range (Start & End) -->
+								<div class="settings-grid guidance-range-grid">
+									<div class="form-group">
+										<div class="label-row">
+											<label for="control-guidance-start">Guidance Start</label>
+											<span id="control-guidance-start-val" class="param-val">0.00</span>
+										</div>
+										<input
+											type="range"
+											id="control-guidance-start"
+											name="control_guidance_start"
+											min="0.0"
+											max="1.0"
+											step="0.05"
+											value="0.0"
+										/>
+									</div>
+
+									<div class="form-group">
+										<div class="label-row">
+											<label for="control-guidance-end">Guidance End</label>
+											<span id="control-guidance-end-val" class="param-val">1.00</span>
+										</div>
+										<input
+											type="range"
+											id="control-guidance-end"
+											name="control_guidance_end"
+											min="0.0"
+											max="1.0"
+											step="0.05"
+											value="1.0"
+										/>
+									</div>
 								</div>
 
 								<!-- Control Image Upload -->
@@ -350,6 +411,11 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 			const btnRandomSeed = document.getElementById('btn-random-seed') as HTMLButtonElement;
 			const btnSamplePrompt = document.getElementById('btn-sample-prompt') as HTMLButtonElement;
 			
+			// LoRA DOM Elements
+			const loraCheckbox = document.getElementById('enable-4step-lora') as HTMLInputElement;
+			const loraSettingContainer = document.getElementById('lora-setting-container') as HTMLElement;
+			const pillPhotoToLineart = document.getElementById('pill-preset-photo-to-lineart') as HTMLButtonElement;
+
 			// ControlNet DOM Elements
 			const cnetAccordion = document.getElementById('controlnet-accordion') as HTMLDetailsElement;
 			const cnetSummaryStatus = document.getElementById('cnet-summary-status') as HTMLElement;
@@ -358,6 +424,10 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 			const controlnetIdInput = document.getElementById('controlnet-id') as HTMLInputElement;
 			const controlnetScaleInput = document.getElementById('controlnet-scale') as HTMLInputElement;
 			const controlnetScaleVal = document.getElementById('controlnet-scale-val') as HTMLElement;
+			const controlGuidanceStartInput = document.getElementById('control-guidance-start') as HTMLInputElement;
+			const controlGuidanceStartVal = document.getElementById('control-guidance-start-val') as HTMLElement;
+			const controlGuidanceEndInput = document.getElementById('control-guidance-end') as HTMLInputElement;
+			const controlGuidanceEndVal = document.getElementById('control-guidance-end-val') as HTMLElement;
 			const pillCustom = document.getElementById('pill-custom') as HTMLElement;
 			const presetPills = document.querySelectorAll('.preset-pill');
 
@@ -388,8 +458,102 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 				return (checked?.value?.toLowerCase() === 'flux') ? 'flux' : 'sdxl';
 			}
 
+			// Store previous step value before locking to 4
+			let previousStepValue = '25';
+
+			function setLoraEnabled(enabled: boolean) {
+				if (!loraCheckbox) return;
+				loraCheckbox.checked = enabled;
+				if (enabled) {
+					if (stepsInput.value !== '4') {
+						previousStepValue = stepsInput.value;
+					}
+					stepsInput.value = '4';
+					stepsVal.textContent = '4 (Locked)';
+					stepsInput.disabled = true;
+					stepsInput.classList.add('locked-input');
+				} else {
+					stepsInput.disabled = false;
+					stepsInput.classList.remove('locked-input');
+					stepsInput.value = previousStepValue || '25';
+					stepsVal.textContent = stepsInput.value;
+				}
+			}
+
+			loraCheckbox?.addEventListener('change', () => {
+				setLoraEnabled(loraCheckbox.checked);
+			});
+
+			// Photo to Lineart preset values
+			const PHOTO_TO_LINEART_PROMPT = 'clean line art, black ink outline sketch, minimal vector style, solid pure white background, contour line drawing, masterpiece';
+			const PHOTO_TO_LINEART_NEG_PROMPT = 'shadows, shading, coloring, gradients, realistic texture, background details, gray lines, blurry';
+
+			function applyPhotoToLineartPreset() {
+				// Ensure SDXL is selected
+				const sdxlRadio = document.querySelector('input[name="model_type"][value="sdxl"]') as HTMLInputElement;
+				if (sdxlRadio && !sdxlRadio.checked) {
+					sdxlRadio.checked = true;
+					document.querySelectorAll('.model-option').forEach((opt) => opt.classList.remove('active'));
+					sdxlRadio.closest('.model-option')?.classList.add('active');
+					syncModelFeatures('sdxl');
+				}
+
+				// Set prompt & negative prompt
+				promptInput.value = PHOTO_TO_LINEART_PROMPT;
+				negativePromptInput.value = PHOTO_TO_LINEART_NEG_PROMPT;
+
+				// Enable 4-step LoRA (locks steps to 4)
+				setLoraEnabled(true);
+
+				// Guidance Scale: 2
+				guidanceInput.value = '2';
+				guidanceVal.textContent = '2.0';
+
+				// ControlNet: Canny
+				const cannyConfig = CONTROLNET_REGISTRY['canny'];
+				if (cannyConfig && cannyConfig.sdxl) {
+					controlnetIdInput.value = cannyConfig.sdxl;
+				}
+				// ControlNet Conditioning Scale: 0.65
+				controlnetScaleInput.value = '0.65';
+				controlnetScaleVal.textContent = '0.65';
+
+				// Control Guidance Range
+				controlGuidanceStartInput.value = '0.0';
+				controlGuidanceStartVal.textContent = '0.00';
+				controlGuidanceEndInput.value = '1.0';
+				controlGuidanceEndVal.textContent = '1.00';
+
+				// Set active preset state
+				activePresetKey = 'photo-to-lineart';
+				presetPills.forEach((pill) => {
+					const pKey = pill.getAttribute('data-preset-key');
+					if (pKey === 'photo-to-lineart') {
+						pill.classList.add('active');
+					} else {
+						pill.classList.remove('active');
+					}
+				});
+				if (pillCustom) pillCustom.style.display = 'none';
+
+				cnetMappingBadge.textContent = 'Photo to Lineart';
+				cnetMappingBadge.className = 'mapping-badge badge-preset';
+				cnetSummaryStatus.textContent = 'Photo to Lineart (Canny + 4-Step LoRA)';
+				cnetRepoNote.textContent = 'Preset active: "Photo to Lineart" (4-step LoRA, Canny ControlNet scale 0.65, guidance 2).';
+
+				// Open ControlNet accordion so user sees the settings & can upload the photo
+				if (cnetAccordion) {
+					cnetAccordion.open = true;
+				}
+			}
+
 			// ControlNet Preset logic
 			function applyControlNetPreset(key: string, updateInput: boolean = true) {
+				if (key === 'photo-to-lineart') {
+					applyPhotoToLineartPreset();
+					return;
+				}
+
 				activePresetKey = key;
 				const currentModel = getSelectedModel();
 
@@ -435,6 +599,12 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 						controlnetScaleInput.value = String(config.defaultScale);
 						controlnetScaleVal.textContent = Number(config.defaultScale).toFixed(2);
 					}
+					if (updateInput) {
+						controlGuidanceStartInput.value = '0.0';
+						controlGuidanceStartVal.textContent = '0.00';
+						controlGuidanceEndInput.value = '1.0';
+						controlGuidanceEndVal.textContent = '1.00';
+					}
 					cnetMappingBadge.textContent = `Auto-mapped (${currentModel.toUpperCase()})`;
 					cnetMappingBadge.className = 'mapping-badge badge-preset';
 					cnetSummaryStatus.textContent = `${config.label} [${currentModel.toUpperCase()}]`;
@@ -451,6 +621,32 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 					}
 				});
 			});
+
+			function syncModelFeatures(model: 'sdxl' | 'flux') {
+				if (model === 'flux') {
+					// Hide or disable SDXL LoRA options
+					if (loraSettingContainer) {
+						loraSettingContainer.style.display = 'none';
+					}
+					if (pillPhotoToLineart) {
+						pillPhotoToLineart.style.display = 'none';
+					}
+					if (loraCheckbox && loraCheckbox.checked) {
+						setLoraEnabled(false);
+					}
+					if (activePresetKey === 'photo-to-lineart') {
+						applyControlNetPreset('canny', true);
+					}
+				} else {
+					// Show SDXL LoRA options
+					if (loraSettingContainer) {
+						loraSettingContainer.style.display = 'block';
+					}
+					if (pillPhotoToLineart) {
+						pillPhotoToLineart.style.display = 'inline-flex';
+					}
+				}
+			}
 
 			// Manual override detection on input
 			controlnetIdInput.addEventListener('input', () => {
@@ -508,6 +704,26 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 				controlnetScaleVal.textContent = Number(controlnetScaleInput.value).toFixed(2);
 			});
 
+			controlGuidanceStartInput.addEventListener('input', () => {
+				const startVal = parseFloat(controlGuidanceStartInput.value);
+				const endVal = parseFloat(controlGuidanceEndInput.value);
+				if (startVal > endVal) {
+					controlGuidanceEndInput.value = String(startVal);
+					controlGuidanceEndVal.textContent = Number(startVal).toFixed(2);
+				}
+				controlGuidanceStartVal.textContent = Number(controlGuidanceStartInput.value).toFixed(2);
+			});
+
+			controlGuidanceEndInput.addEventListener('input', () => {
+				const startVal = parseFloat(controlGuidanceStartInput.value);
+				const endVal = parseFloat(controlGuidanceEndInput.value);
+				if (endVal < startVal) {
+					controlGuidanceStartInput.value = String(endVal);
+					controlGuidanceStartVal.textContent = Number(endVal).toFixed(2);
+				}
+				controlGuidanceEndVal.textContent = Number(controlGuidanceEndInput.value).toFixed(2);
+			});
+
 			// Model selection cards highlight & ControlNet sync
 			const modelRadios = document.querySelectorAll('input[name="model_type"]');
 			modelRadios.forEach((radio) => {
@@ -515,8 +731,11 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 					document.querySelectorAll('.model-option').forEach((opt) => opt.classList.remove('active'));
 					radio.closest('.model-option')?.classList.add('active');
 
+					const newModel = getSelectedModel();
+					syncModelFeatures(newModel);
+
 					// When switching model, update ControlNet preset if a standard preset is selected
-					if (activePresetKey !== 'none' && activePresetKey !== 'custom') {
+					if (activePresetKey !== 'none' && activePresetKey !== 'custom' && activePresetKey !== 'photo-to-lineart') {
 						applyControlNetPreset(activePresetKey, true);
 					}
 				});
@@ -607,10 +826,13 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 
 				const selectedModel = getSelectedModel();
 				const negativePrompt = negativePromptInput.value.trim();
-				const steps = parseInt(stepsInput.value, 10);
+				const isLoraEnabled = selectedModel === 'sdxl' && !!loraCheckbox?.checked;
+				const steps = isLoraEnabled ? 4 : parseInt(stepsInput.value, 10);
 				const guidanceScale = parseFloat(guidanceInput.value);
 				const numImages = parseInt(numImagesSelect.value, 10);
-				const seed = seedInput.value.trim() !== '' ? parseInt(seedInput.value, 10) : null;
+				const rawSeed = seedInput.value.trim();
+				const parsedSeed = rawSeed !== '' ? parseInt(rawSeed, 10) : -1;
+				const seed = (!isNaN(parsedSeed)) ? parsedSeed : -1;
 				const controlnetId = controlnetIdInput.value.trim();
 				const controlnetScale = parseFloat(controlnetScaleInput.value);
 
@@ -623,12 +845,15 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 					guidance_scale: guidanceScale,
 					num_images: numImages,
 					seed: seed,
+					enable_4step_lora: isLoraEnabled,
 				};
 
 				if (controlnetId && controlImageB64) {
 					payload.controlnet_id = controlnetId;
 					payload.control_image_b64 = controlImageB64;
 					payload.controlnet_scale = controlnetScale;
+					payload.control_guidance_start = parseFloat(controlGuidanceStartInput.value);
+					payload.control_guidance_end = parseFloat(controlGuidanceEndInput.value);
 				}
 
 				// UI Loading transition
@@ -670,7 +895,9 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 						guidance: guidanceScale,
 						seed: seed ?? 'Random',
 						prompt,
-						controlnet: controlnetId ? (activePresetKey !== 'none' ? activePresetKey : 'Custom') : null
+						controlnet: controlnetId ? (activePresetKey !== 'none' ? activePresetKey : 'Custom') : null,
+						lora: isLoraEnabled ? '4-Step Lightning' : null,
+						guidanceRange: controlnetId && controlImageB64 ? `${parseFloat(controlGuidanceStartInput.value).toFixed(2)} - ${parseFloat(controlGuidanceEndInput.value).toFixed(2)}` : null
 					});
 
 					loadingState.classList.add('hidden');
@@ -686,14 +913,16 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 				}
 			});
 
-			function renderResults(images: string[], meta: { model: string; steps: number; guidance: number; seed: any; prompt: string; controlnet: string | null }) {
+			function renderResults(images: string[], meta: { model: string; steps: number; guidance: number; seed: any; prompt: string; controlnet: string | null; lora?: string | null; guidanceRange?: string | null }) {
 				galleryGrid.innerHTML = '';
 				galleryMeta.innerHTML = `
 					<span class="chip chip-model">${meta.model}</span>
 					<span class="chip">Steps: ${meta.steps}</span>
 					<span class="chip">Guidance: ${meta.guidance}</span>
 					<span class="chip">Seed: ${meta.seed}</span>
+					${meta.lora ? `<span class="chip chip-lora">⚡ ${meta.lora}</span>` : ''}
 					${meta.controlnet ? `<span class="chip chip-cnet">ControlNet: ${meta.controlnet}</span>` : ''}
+					${meta.guidanceRange ? `<span class="chip">Guidance Range: ${meta.guidanceRange}</span>` : ''}
 				`;
 
 				images.forEach((b64, idx) => {
@@ -705,7 +934,7 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 
 					card.innerHTML = `
 						<div class="image-wrapper">
-							<img src="${dataUri}" alt="${meta.prompt.replace(/"/g, '&quot;')}" loading="lazy" />
+							<img src="${dataUri}" alt="${meta.prompt.replace(/"/g, '&quot;')}" loading="lazy" width="100%" />
 							<div class="image-overlay">
 								<button type="button" class="btn-overlay btn-preview" title="View Fullscreen">🔍</button>
 								<a href="${dataUri}" download="${filename}" class="btn-overlay btn-download" title="Download PNG">⬇</a>
@@ -1076,6 +1305,129 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 				gap: 0.45rem;
 			}
 
+			/* SDXL Lightning LoRA Toggle & Locked Steps */
+			.lora-setting-wrap {
+				margin-bottom: 1.25rem;
+			}
+
+			.lora-toggle-card {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(236, 72, 153, 0.05) 100%);
+				border: 1px solid rgba(99, 102, 241, 0.25);
+				border-radius: var(--radius-md);
+				padding: 0.75rem 1rem;
+				gap: 1rem;
+			}
+
+			.lora-info {
+				display: flex;
+				flex-direction: column;
+				gap: 0.2rem;
+			}
+
+			.lora-header {
+				display: flex;
+				align-items: center;
+				gap: 0.5rem;
+			}
+
+			.lora-title {
+				font-size: 0.88rem;
+				font-weight: 700;
+				color: #e0e7ff;
+			}
+
+			.lora-badge {
+				font-size: 0.65rem;
+				font-weight: 700;
+				padding: 0.1rem 0.4rem;
+				border-radius: 4px;
+				background: rgba(99, 102, 241, 0.2);
+				color: #a5b4fc;
+				border: 1px solid rgba(99, 102, 241, 0.3);
+			}
+
+			.lora-desc {
+				font-size: 0.75rem;
+				color: var(--text-muted);
+			}
+
+			/* Switch Toggle slider */
+			.switch-wrap {
+				position: relative;
+				display: inline-block;
+				width: 44px;
+				height: 24px;
+				flex-shrink: 0;
+			}
+
+			.switch-wrap input {
+				opacity: 0;
+				width: 0;
+				height: 0;
+			}
+
+			.switch-slider {
+				position: absolute;
+				cursor: pointer;
+				top: 0;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				background-color: var(--bg-base);
+				border: 1px solid var(--border-color);
+				transition: 0.2s;
+				border-radius: 24px;
+			}
+
+			.switch-slider:before {
+				position: absolute;
+				content: "";
+				height: 16px;
+				width: 16px;
+				left: 3px;
+				bottom: 3px;
+				background-color: var(--text-muted);
+				transition: 0.2s;
+				border-radius: 50%;
+			}
+
+			.switch-wrap input:checked + .switch-slider {
+				background-color: var(--primary);
+				border-color: var(--primary);
+			}
+
+			.switch-wrap input:checked + .switch-slider:before {
+				transform: translateX(20px);
+				background-color: #ffffff;
+			}
+
+			.locked-input {
+				opacity: 0.6;
+				cursor: not-allowed;
+			}
+
+			.preset-pill-special {
+				background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(236, 72, 153, 0.15) 100%);
+				border-color: rgba(168, 85, 247, 0.4);
+				color: #e0e7ff;
+				font-weight: 600;
+			}
+
+			.preset-pill-special:hover {
+				border-color: #a855f7;
+				color: #ffffff;
+			}
+
+			.preset-pill-special.active {
+				background: linear-gradient(135deg, rgba(99, 102, 241, 0.35) 0%, rgba(236, 72, 153, 0.35) 100%);
+				border-color: #ec4899;
+				color: #ffffff;
+				box-shadow: 0 0 12px rgba(236, 72, 153, 0.3);
+			}
+
 			.preset-pill {
 				background: var(--bg-base);
 				border: 1px solid var(--border-color);
@@ -1406,6 +1758,13 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 				font-weight: 700;
 			}
 
+			.chip-lora {
+				background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(236, 72, 153, 0.25) 100%);
+				border-color: rgba(168, 85, 247, 0.4);
+				color: #e0e7ff;
+				font-weight: 700;
+			}
+
 			.chip-cnet {
 				background: rgba(236, 72, 153, 0.15);
 				border-color: rgba(236, 72, 153, 0.3);
@@ -1442,8 +1801,7 @@ import { CONTROLNET_REGISTRY } from '../lib/controlnets';
 			}
 
 			.image-wrapper img {
-				width: 100%;
-				height: 100%;
+				width: 100% !important;
 				object-fit: cover;
 				display: block;
 			}
